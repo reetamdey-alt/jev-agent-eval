@@ -1,6 +1,6 @@
 name: nightly
 
-on:
+"on":
   schedule:
     - cron: "17 3 * * *"  # off-peak, off-round minute
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
       - run: uv sync --all-extras
       - name: PR suite (mock provider, offline)
         run: |
-          uv run jev-eval run --dataset datasets/manifests/release-v2.yaml \
+          uv run jev-eval run --dataset datasets/manifests/core-v1.yaml \
             --provider mock --suite pr --output-dir reports
       - uses: actions/upload-artifact@v4
         with:
@@ -33,7 +33,7 @@ jobs:
       - run: uv sync --all-extras
       - name: Calibration report from PR run
         run: |
-          uv run jev-eval run --dataset datasets/manifests/release-v2.yaml \
+          uv run jev-eval run --dataset datasets/manifests/core-v1.yaml \
             --provider mock --suite pr --output-dir reports
           run_dir=$(ls -d reports/runs/* | sort | head -1)
           test -s "$run_dir/calibration.json"
@@ -48,9 +48,9 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run pytest -q tests/integration
       - name: Metamorphic suite
-        run: uv run jev-eval metamorphic --dataset datasets/manifests/release-v2.yaml
+        run: uv run jev-eval metamorphic --dataset datasets/manifests/core-v1.yaml
       - name: Consistency / repeatability suite
-        run: uv run jev-eval consistency --dataset datasets/manifests/release-v2.yaml
+        run: uv run jev-eval consistency --dataset datasets/manifests/core-v1.yaml
 
   soak:
     runs-on: ubuntu-latest
@@ -61,7 +61,8 @@ jobs:
           python-version: "3.12"
       - run: uv sync --all-extras
       - name: Small soak test (mock provider)
-        run: uv run python - <<'EOF'
+        run: |
+          uv run python - <<'EOF'
           import asyncio
           from jev_agent_eval.client.systemone import MockJEVProvider
           from jev_agent_eval.runners.batch import run_soak
