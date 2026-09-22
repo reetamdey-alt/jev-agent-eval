@@ -40,6 +40,8 @@ jobs:
       - run: uv sync --all-extras
       - name: Dataset manifest + case invariants + gold leakage validation
         run: |
+          uv run jev-eval datasets validate datasets/manifests/release-v2.yaml
+          uv run jev-eval datasets validate datasets/manifests/holdout-v2.yaml
           uv run jev-eval datasets validate datasets/manifests/core-v1.yaml
 
   smoke-eval:
@@ -52,7 +54,7 @@ jobs:
       - run: uv sync --all-extras
       - name: Offline smoke suite (mock provider, no network)
         run: |
-          uv run jev-eval run --dataset datasets/manifests/core-v1.yaml \
+          uv run jev-eval run --dataset datasets/manifests/release-v2.yaml \
             --provider mock --suite smoke --output-dir reports
       - name: Replay must reproduce metrics without network
         run: |

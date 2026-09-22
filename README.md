@@ -6,6 +6,8 @@ JEV-Agent-Eval measures the one thing that actually matters for an agent-control
 
 ## Run the real eval
 
+The **complete corpus ships in this repository** — all 15,090 release cases, the counterfactual/metamorphic variants, and the 3,000-case holdout. A fresh clone contains everything needed to run the full evaluation. Nothing is downloaded at eval time; no dataset build step is required.
+
 ```bash
 git clone https://github.com/reetamdey-alt/jev-agent-eval.git
 cd jev-agent-eval
@@ -13,14 +15,20 @@ uv sync
 
 export JEV_API_KEY="sk-..."
 
-uv run jev-eval datasets validate datasets/manifests/core-v1.yaml
-uv run jev-eval run \
-  --config configs/smoke.yaml \
-  --dataset datasets/manifests/core-v1.yaml \
-  --live-only
+# verify the full corpus (schema + sha256 + leakage scan) — fully offline
+uv run jev-eval datasets validate datasets/manifests/release-v2.yaml
+
+# 300-case proportional smoke across all 20 capabilities
+uv run jev-eval run --config configs/smoke.yaml --live-only
+
+# ...or the complete 15,090-case release evaluation
+uv run jev-eval run --config configs/release.yaml --live-only
+
+# ...or the 3,000-case holdout suite
+uv run jev-eval run --config configs/holdout.yaml --live-only
 ```
 
-The final command calls the real JEV API. It exits `0` when all quality gates pass and `1` when a model-quality gate fails. Inspect the generated run with:
+The run commands call the real JEV API. They exit `0` when all quality gates pass and `1` when a model-quality gate fails. Inspect the generated run with:
 
 ```bash
 RUN=$(ls -td reports/runs/* | head -1)
@@ -171,7 +179,7 @@ Every question pack in the benchmark is built from these three primitives, which
 The specific differentiators:
 
 - **20 capabilities** spanning the full control surface of an agent — safety, correctness, calibration, robustness, operational, and data-quality dimensions — not a single accuracy number.
-- **A 240-case reproducible starter corpus is included.** The complete 18,090-case reference corpus (15,090 release cases plus 3,000 private holdout cases) is supported by the same schema and runner, but is not redistributed in this repository. It combines five lineages: curated core cases, anonymized real agent traces, 13 pinned public benchmark transformations, deterministic synthetic families, and counterfactual/metamorphic variants.
+- **The complete 18,090-case corpus ships in the repository.** 15,090 release cases plus 3,000 holdout cases, with variants — committed with SHA-256 integrity pins so a fresh clone can run any suite immediately. It combines five lineages: curated core cases, anonymized real agent traces, 13 pinned public benchmark transformations, deterministic synthetic families, and counterfactual/metamorphic variants.
 - **Zero-guesswork scoring**: every gold label carries a provenance class; primary metrics weight the exact/proven provenances.
 - **Six-dimension scorecard with hard quality gates** — a run can *fail* on calibration or safety even with high accuracy, and the exit code says so.
 - **Rigorous statistics**: paired bootstrap confidence intervals, cluster-aware resampling (correlated cases from the same repo/episode don't inflate significance), and worst-slice reporting.
@@ -186,13 +194,14 @@ The specific differentiators:
                               ┌──────────────────────────────────────────┐
                               │              datasets/                   │
                               │                                          │
-                              │  internal/ (240-case starter core)      │
-                              │  fixtures/ (trace-format examples)      │
-                              │  manifests/core-v1.yaml    integrity map │
-                              │  public/    (optional local downloads;  │
-                              │             ignored by Git)             │
-                              │  reference corpus + private holdout     │
-                              │             (local-only, not published) │
+                              │  release-v2/ (15,090 cases + variants)  │
+                              │  holdout/    (3,000 holdout cases)      │
+                              │  internal/   (240-case starter subset)  │
+                              │  fixtures/   (trace-format examples)     │
+                              │  manifests/  (release-v2, holdout-v2,   │
+                              │               core-v1; sha256 pins)     │
+                              │  public/     (13 pinned upstream        │
+                              │               snapshots + provenance)   │
                               └───────────────┬──────────────────────────┘
                                               │ load_manifest_cases()
                                               │ (schema validation, sha256
@@ -329,52 +338,49 @@ These 20 capabilities roll up into the scorecard's six dimensions:
 
 ## 5. Where the Data Comes From
 
-This repository separates the **evaluation engine**, the **redistributable starter dataset**, and the **larger reference corpus**. That separation is intentional: it keeps private agent traces and large upstream snapshots out of Git while preserving the exact schema, adapters, scoring rules, and replay contract used for the full evaluation.
+**The complete corpus is committed to this repository.** A fresh clone contains the full 15,090-case release corpus, the variant pairs, and the 3,000-case holdout — plus the pinned upstream source snapshots and the complete build pipeline. Anyone can clone and immediately run any suite, from smoke to holdout, with zero downloads and zero dataset construction.
 
 ```
- GitHub repository                         Local-only reference build
-┌──────────────────────────────┐          ┌──────────────────────────────┐
-│ engine + tests + adapters    │          │ raw agent traces             │
-│ 240-case starter core        │          │ downloaded public snapshots  │
-│ source-download tooling      │          │ generated synthetic families │
-│ schema + integrity contract  │          │ private holdout + variants   │
-└──────────────────┬───────────┘          └───────────────┬──────────────┘
-                   │ same CanonicalCase schema           │
-                   └─────────────────────────────────────┘
-                                     ▼
+ git clone                                        everything below ships in the repo
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                │
+│  datasets/release-v2/cases.jsonl      15,090 canonical cases (20 capabilities) │
+│  datasets/release-v2/variants.jsonl   counterfactual + metamorphic pairs      │
+│  datasets/holdout/holdout.jsonl       3,000 stratified holdout cases           │
+│  datasets/manifests/*.yaml            manifests + SHA-256 integrity pins       │
+│  datasets/public/                     13 pinned upstream snapshots +           │
+│                                       PROVENANCE.json per source              │
+│  scripts/build_cases.py               the deterministic corpus builder         │
+│  src/.../ingestion/, src/.../datasets/  adapters + trace-ingestion pipeline   │
+│                                                                                │
+└──────────────────────────────────────┬─────────────────────────────────────────┘
+                                       │ uv run jev-eval run ... (no downloads)
+                                       ▼
                      reproducible evaluation + replay artifacts
 ```
 
-### 5.1 What is included immediately
+### 5.1 The five data lineages
 
-- `datasets/internal/*.jsonl` — 240 deterministic starter cases across four high-priority capabilities:
-  - `tool_risk`: 60 cases
-  - `goal_completion`: 60 cases
-  - `claim_evidence`: 60 cases
-  - `injection_resistance`: 60 cases
-- `datasets/manifests/core-v1.yaml` — manifest and SHA-256 integrity pins for the starter corpus.
-- `datasets/fixtures/trace_basic.jsonl` — a small, safe example of trace-mode input.
-- Dataset adapters and source-download scripts for rebuilding larger public-source corpora locally.
+Every case in the corpus carries its lineage in `provenance.source`. The 15,090 release cases decompose into five families:
 
-The starter corpus is sufficient for installation checks, CI, schema validation, scoring verification, and small live evaluations. It is not a capability-level benchmark claim; use the full corpus for model comparisons.
+```
+ 15,090 release cases
+ ├─ legacy-v1 core ────────── the battle-tested v1 cases, schema-migrated
+ ├─ real agent traces ─────── anonymized coding-agent session transcripts,
+ │                            converted to control-plane states (ingestion
+ │                            pipeline: anonymize → secret-scan → normalize →
+ │                            classify → hash → case)
+ ├─ public benchmarks ─────── 13 pinned upstream sources (below), transformed
+ │                            into meta-decision cases
+ ├─ deterministic synthetic ─ seeded synthetic families for capability cells
+ │                            no public source covers
+ └─ variants ──────────────── counterfactual (gold flipped) + metamorphic
+                              (semantics-preserving transform) pairs
+```
 
 ### 5.2 Public benchmark transformations
 
-Upstream benchmarks are never evaluated as-is. Each source is transformed into JEV meta-decision cases: original ground truth is used to derive deterministic gold labels, but that ground truth is kept out of the JEV input state.
-
-Run this to inspect the supported sources:
-
-```bash
-uv run python scripts/download_sources.py --list
-```
-
-Download selected sources locally with:
-
-```bash
-uv run python scripts/download_sources.py --sources bfcl ifeval
-```
-
-Downloaded files and `PROVENANCE.json` records are stored under `datasets/public/`, which is ignored by Git. The provenance records include the upstream repository, exact revision, license, expected counts, download time, and SHA-256 checksums.
+Upstream benchmarks are never evaluated as-is. Each source is transformed into JEV meta-decision cases: original ground truth is used to derive deterministic gold labels, but that ground truth is kept out of the JEV input state. The pinned upstream snapshots are committed under `datasets/public/` (each with a `PROVENANCE.json` recording the upstream repository, exact revision, license, expected counts, and SHA-256 checksums), so the transformation is reproducible from a fresh clone.
 
 | Upstream | Repository | License | Transformed into |
 |---|---|---|---|
@@ -392,20 +398,21 @@ Downloaded files and `PROVENANCE.json` records are stored under `datasets/public
 | WorkArena / WorkArena++ | `ServiceNow/WorkArena` | MIT | enterprise-workflow action decisions |
 | Online-Mind2Web | `OSU-NLP-Group/Online-Mind2Web` | MIT | live-web task decisions |
 
-Transformation code lives in `src/jev_agent_eval/datasets/` and `src/jev_agent_eval/datasets/adapters_v2.py`. Downloads happen only through the scripts layer; evaluation itself is offline-safe.
+Transformation code lives in `src/jev_agent_eval/datasets/` and `src/jev_agent_eval/datasets/adapters_v2.py`. The only file not committed is one 106 MB SWE-bench train parquet that exceeds GitHub's 100 MB file limit; re-fetch it with `uv run python scripts/download_sources.py --sources swebench` if you want to re-run the SWE-bench transformation from raw source (the committed corpus already contains every SWE-bench-derived case, so this is never needed to run an eval).
 
-### 5.3 Reference corpus and private holdout
+### 5.3 Rebuilding the corpus
 
-The complete reference build contains:
+`scripts/build_cases.py` deterministically regenerates the corpus from the committed sources (same seeds, same hashes). Run it only if you want to verify the build pipeline itself — evaluation never requires it:
 
-- 15,090 primary release cases across 20 capabilities
-- Generated counterfactual and metamorphic variant pairs
-- 3,000 stratified private holdout cases
-- Source, difficulty, cluster, contamination, and development-split metadata
+```bash
+uv run python scripts/build_cases.py          # defaults rebuild release-v2/ + holdout/
+```
 
-That build is intentionally not committed because it contains locally derived agent traces, large transformed snapshots, and a holdout whose usefulness depends on remaining unseen. Organizations can reproduce an equivalent build by supplying their own trace corpus, downloading the pinned public sources, and using the canonical schema and adapters in this repository.
+### 5.4 The starter subset and fixtures
 
-### 5.4 Development-split firewall
+`datasets/internal/*.jsonl` (240 cases) and `datasets/manifests/core-v1.yaml` remain available as a small, fast subset for CI and installation checks. `datasets/fixtures/trace_basic.jsonl` is a safe trace-mode example.
+
+### 5.5 Development-split firewall
 
 Every full-corpus case carries a `dev_split`:
 
@@ -417,10 +424,10 @@ Every full-corpus case carries a `dev_split`:
  private_holdout ──▶ ONLY the holdout suite
  secret_red_team ─┐
  future_temporal_holdout ─┐
-                          ▶ reserved; never in public manifests
+                          ▶ reserved; never in release manifests
 ```
 
-The runner hard-filters holdout runs to `private_holdout`; public suites exclude that split. This prevents a mixed manifest from leaking reserved cases into ordinary evaluation.
+The runner hard-filters holdout runs to `private_holdout`; release suites exclude that split. This prevents a mixed manifest from leaking reserved cases into ordinary evaluation. The holdout suite is committed to the repo by deliberate choice — anyone can run it — so it functions as a stratified final-check suite rather than an unseen overfitting backstop; the reserved splits above remain outside every committed manifest.
 
 ## 6. The Canonical Case Format
 
@@ -684,8 +691,8 @@ uv run jev-eval run [OPTIONS]
 
 | Option | Meaning |
 |---|---|
-| `--dataset PATH` | dataset manifest; smoke falls back to `core-v1.yaml` when the larger local corpus is absent |
-| `--suite NAME` | `smoke` (300 full / 240 starter) \| `pr` (1,500) \| `nightly` (5,000) \| `release` (all) \| `holdout` \| `redteam` |
+| `--dataset PATH` | dataset manifest (defaults per suite: `release-v2.yaml`, holdout → `holdout-v2.yaml`) |
+| `--suite NAME` | `smoke` (300) \| `pr` (1,500) \| `nightly` (5,000) \| `release` (all 15,090) \| `holdout` (3,000) \| `redteam` |
 | `--config PATH` | config YAML (suite profiles in `configs/`) |
 | `--model NAME` | model override (default `jev-latest`) |
 | `--provider NAME` | `systemone` (live) \| `mock` (offline tests) |
@@ -765,12 +772,14 @@ uv run jev-eval export --format csv      # machine-readable export of a run
 
 | Suite | Cases | Use | Config |
 |---|---:|---|---|
-| `smoke` | 300 from the full corpus, or all 240 starter cases | pre-merge/install sanity | `configs/smoke.yaml` |
+| `smoke` | 300 (proportional across all 20 capabilities) | pre-merge/install sanity | `configs/smoke.yaml` |
 | `pr` | 1,500 | full PR gate | `configs/pr.yaml` |
 | `nightly` | 5,000 | regression tracking | `configs/nightly.yaml` |
-| `release` | all 15,090 (+variants) | requires the local full corpus | `configs/release.yaml` |
-| `holdout` | 3,000 private | requires the local holdout corpus | `configs/holdout.yaml` |
+| `release` | all 15,090 (+variants) | complete evaluation | `configs/release.yaml` |
+| `holdout` | 3,000 | stratified final-check suite | `configs/holdout.yaml` |
 | `redteam` | — | adversarial passes | — |
+
+All suites run directly from the committed corpus — every manifest, every case file, and the full variant/holdout sets are in the repository.
 
 Case selection is **proportional per capability** (deterministic largest-remainder quotas), so a 300-case smoke covers all 20 capabilities in proportion to the full dataset — never an alphabetical head-cut. For rare capabilities this means small smoke-sample sizes (e.g. `permission_gating` n=1 in smoke out of 50 non-holdout cases) — by design, so smoke numbers are representative proportions, not capability-level verdicts.
 
@@ -900,11 +909,14 @@ jev-eval/
 │       └── case.py            CanonicalCase, GoldAnswer, provenance enum
 ├── configs/                   default + suite profiles (smoke..holdout)
 ├── datasets/
-│   ├── manifests/             core-v1.yaml (sha256 pins)
-│   ├── internal/              240-case starter core
+│   ├── manifests/             release-v2 / holdout-v2 / core-v1 (sha256 pins)
+│   ├── release-v2/            15,090 cases + variant pairs (committed)
+│   ├── holdout/               3,000 holdout cases (committed)
+│   ├── internal/              240-case starter subset (CI)
 │   ├── fixtures/              safe trace examples
-│   └── public/                optional local downloads (Git-ignored)
+│   └── public/                13 pinned upstream snapshots + PROVENANCE.json
 ├── scripts/
+│   ├── build_cases.py         deterministic corpus builder
 │   ├── download_sources.py    pinned public-source downloader
 │   └── download_benchmarks.py legacy benchmark downloader
 ├── tests/
