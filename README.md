@@ -4,6 +4,36 @@
 
 JEV-Agent-Eval measures the one thing that actually matters for an agent-control model: *does it make the right meta-decision, at the right time, with the right confidence?* Not "can it write code" — that's the agent's job. JEV decides **should a tool be called, which tool, is this progress real, should we stop, is this safe, do we need a human** — and this benchmark grades every one of those decisions against verifiable gold labels.
 
+## Run the real eval
+
+```bash
+git clone https://github.com/reetamdey-alt/jev-agent-eval.git
+cd jev-agent-eval
+uv sync
+
+export JEV_API_KEY="sk-..."
+
+uv run jev-eval datasets validate datasets/manifests/core-v1.yaml
+uv run jev-eval run \
+  --config configs/smoke.yaml \
+  --dataset datasets/manifests/core-v1.yaml \
+  --live-only
+```
+
+The final command calls the real JEV API. It exits `0` when all quality gates pass and `1` when a model-quality gate fails. Inspect the generated run with:
+
+```bash
+RUN=$(ls -td reports/runs/* | head -1)
+
+cat "$RUN/summary.md"
+open "$RUN/report.html"
+uv run jev-eval replay "$RUN"
+```
+
+Replay regenerates scoring and reports from the stored live responses without calling JEV again.
+
+---
+
 ```
    ┌─────────────────────────────────────────────────────────────────────┐
    │                        THE CORE IDEA                                │
@@ -33,7 +63,7 @@ JEV-Agent-Eval measures the one thing that actually matters for an agent-control
 8. [Quality Gates and the Scorecard](#8-quality-gates-and-the-scorecard)
 9. [Security Model](#9-security-model)
 10. [Installation](#10-installation)
-11. [Quickstart](#11-quickstart)
+11. [Live Evaluation Workflow](#11-live-evaluation-workflow)
 12. [The CLI Reference](#12-the-cli-reference)
 13. [Suite Profiles](#13-suite-profiles)
 14. [Run Artifacts Explained](#14-run-artifacts-explained)
@@ -326,7 +356,7 @@ This repository separates the **evaluation engine**, the **redistributable start
 - `datasets/fixtures/trace_basic.jsonl` — a small, safe example of trace-mode input.
 - Dataset adapters and source-download scripts for rebuilding larger public-source corpora locally.
 
-The starter corpus is sufficient for installation checks, offline mock runs, CI, schema validation, scoring verification, and small live smoke evaluations. It is not a capability-level benchmark claim; use the full corpus for model comparisons.
+The starter corpus is sufficient for installation checks, CI, schema validation, scoring verification, and small live evaluations. It is not a capability-level benchmark claim; use the full corpus for model comparisons.
 
 ### 5.2 Public benchmark transformations
 
@@ -620,52 +650,27 @@ export JEV_API_KEY="sk-..."      # never put this in a file the repo can see
 
 ---
 
-## 11. Quickstart
+## 11. Live Evaluation Workflow
+
+Run the commands in [Run the real eval](#run-the-real-eval) first. This section explains the workflow after the live run completes.
 
 ```bash
-# 1. Validate the included starter dataset (240 cases)
-uv run jev-eval datasets validate datasets/manifests/core-v1.yaml
+RUN=$(ls -td reports/runs/* | head -1)
 
-# 2. Offline sanity check with the mock provider (no credentials)
-uv run jev-eval run --config configs/smoke.yaml --dataset datasets/manifests/core-v1.yaml --provider mock
+# Human-readable scorecard
+cat "$RUN/summary.md"
 
-# 3. Small live run against JEV
-export JEV_API_KEY="..."
-uv run jev-eval run --config configs/smoke.yaml --dataset datasets/manifests/core-v1.yaml --live-only
-#    ... exits 0 (all gates pass) or 1 (gate failure; see scorecard.json)
+# Offline HTML dashboard
+open "$RUN/report.html"
 
-# 4. Read the human summary
-cat reports/runs/<latest>/summary.md
+# Re-derive all metrics and reports from stored responses
+uv run jev-eval replay "$RUN"
 
-# 5. Open the interactive dashboard
-open reports/runs/<latest>/report.html
-
-# 6. Re-derive every artifact later, with zero API calls
-uv run jev-eval replay reports/runs/<latest>
-
-# 7. Compare against another run (e.g. before/after a model update)
-uv run jev-eval compare reports/runs/<run-a> reports/runs/<run-b>
+# Compare a candidate run against a baseline
+uv run jev-eval compare reports/runs/<baseline> reports/runs/<candidate>
 ```
 
-Offline mock-run output looks like:
-
-```
-JEV-Agent-Eval run 2026-09-22T18-32-42Z_0000_0edec4
-model=jev-latest  suite=smoke  cases=240  successful=240
-transport_error_rate=0.0000  schema_error_rate=0.0000
-                       Capabilities
-┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┓
-┃ capability           ┃   N ┃ accuracy ┃    ECE ┃ p95 ms ┃
-┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━┩
-│ claim_evidence       │  60 │   1.0000 │ 0.0000 │ 1.0000 │
-│ goal_completion      │  60 │   1.0000 │ 0.0000 │ 1.0000 │
-│ injection_resistance │  60 │   1.0000 │ 0.0000 │ 1.0000 │
-│ tool_risk            │ 120 │   1.0000 │ 0.0250 │ 1.0000 │
-└──────────────────────┴─────┴──────────┴────────┴────────┘
-All quality gates passed.
-```
-
-Mock-provider scores verify the evaluator and artifacts; they are not evidence about real JEV model quality.
+Every live run writes raw responses, scored rows, transport telemetry, calibration, slices, thresholds, risk-coverage curves, provenance, security attestation, and JSON/Markdown/HTML reports. Exit code `1` means the model failed a configured quality gate; it does not mean the evaluator crashed.
 
 ---
 
