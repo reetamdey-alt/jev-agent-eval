@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+/reports/
+*.egg-info/
+.env
+
+# Local-only trace tooling and derived datasets.
+# Keep source sessions untouched; exclude them from the public repository.
+src/jev_agent_eval/ingestion/*transcripts.py
+scripts/build_cases.py
+datasets/holdout/
+datasets/release-v2/
+datasets/manifests/holdout-v2.yaml
+datasets/manifests/release-v2.yaml
+datasets/manifests/_tmp_review/
+docs/acceptance-audit-v2.md
+README.old.md
+
+# Vendored public benchmark payloads are downloaded locally by scripts, not committed.
+datasets/public/
