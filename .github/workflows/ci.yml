@@ -64,8 +64,14 @@ jobs:
           if [ "$rc" -ge 2 ]; then exit "$rc"; fi
       - name: Replay must reproduce metrics without network
         run: |
+          set +e
           run_dir=$(ls -d reports/runs/* | sort | head -1)
           uv run jev-eval replay "$run_dir"
+          rc=$?
+          # Exit 1 = quality-gate failure re-derived from stored responses
+          # (expected for the mock provider); exit >= 2 is a real defect.
+          if [ "$rc" -ge 2 ]; then exit "$rc"; fi
+          exit 0
       - name: Upload redacted artifacts
         if: always()
         uses: actions/upload-artifact@v4
